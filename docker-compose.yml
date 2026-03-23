@@ -1,0 +1,26 @@
+# docker-compose.yml — example usage
+services:
+  opencode:
+    build: .
+    stdin_open: true
+    tty: true
+    working_dir: /workspace
+    volumes:
+      - ./workspace:/workspace
+      - opencode-data:/root/.local/share/opencode
+    environment:
+      # ── 必填 ────────────────────────────────────────────────────────────────
+      OPENAI_API_KEY: "sk-your-key-here"
+
+      # ── 自定义 baseURL（覆盖内置 openai provider 的端点）───────────────────
+      OPENAI_BASE_URL: "https://api.amethyst.ltd/v1"
+
+      # ── 默认模型 ─────────────────────────────────────────────────────────────
+      OPENAI_MODEL: "gpt-4o"
+
+      # ── Basic Auth（可选，用于绕过 Caddy 弹窗 Bug）──────────────────────────
+      BASIC_AUTH_USER: "admin"
+      BASIC_AUTH_PASS: "your-caddy-password"
+
+volumes:
+  opencode-data:
