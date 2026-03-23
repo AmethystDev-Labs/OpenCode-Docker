@@ -15,6 +15,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl ca-certificates jq netcat-openbsd \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl ca-certificates jq netcat-openbsd gnupg \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # ── Caddy（仅 Basic Auth 模式需要）────────────────────────────────────────────
 RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
         | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
