@@ -7,6 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  
 
 jobs:
   # 步骤 A：准备工作，强行转小写
