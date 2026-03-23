@@ -9,17 +9,17 @@
 #   BASIC_AUTH_PASS      上游 Basic Auth 密码（可选）
 # ─────────────────────────────────────────────────────────────────────────────
 # -----------------------------------------------------------------------------
-# OpenCode Docker Image — 原生 OpenAI provider + 自定义 baseURL
+# OpenCode Docker Image - 2026 稳定版
 # -----------------------------------------------------------------------------
 
 FROM debian:bookworm-slim
 
-# 1. 安装基础工具（补上了关键的 gnupg）
+# 1. 安装基础工具（含 gnupg 和解压用的 tar）
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl ca-certificates jq netcat-openbsd gnupg \
+        curl ca-certificates jq netcat-openbsd gnupg tar \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. 安装 Caddy（现在 gpg 命令可用了）
+# 2. 安装 Caddy
 RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
         | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
     && echo "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] \
@@ -28,11 +28,16 @@ RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
     && apt-get update && apt-get install -y caddy \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 3. 安装 OpenCode（动态提取资产链接，解决 404 问题）
-# 注意：这里会自动筛选包含 linux 且包含 x64 或 amd64 的包
-RUN ASSET_URL=$(curl -sf https://api.github.com/repos/sst/opencode/releases/latest \
-        | jq -r '.assets[] | select(.name | test("linux.*(x64|amd64)")) | .browser_download_url') \
-    && curl -fsSL "$ASSET_URL" -o /usr/local/bin/opencode \
+# 3. 安装 OpenCode（修正仓库路径 + 处理压缩包）
+# 注意：改用了 anomalyco/opencode 并添加了 -L 处理重定向
+RUN ASSET_URL=$(curl -sL https://api.github.com/repos/anomalyco/opencode/releases/latest \
+        | jq -r '.assets[] | select(.name | test("linux.*(x64|amd64)")) | .browser_download_url' | head -n 1) \
+    && echo "Downloading from: $ASSET_URL" \
+    && if echo "$ASSET_URL" | grep -q ".tar.gz"; then \
+         curl -fsSL "$ASSET_URL" | tar -xz -C /usr/local/bin/ && mv /usr/local/bin/opencode* /usr/local/bin/opencode; \
+       else \
+         curl -fsSL "$ASSET_URL" -o /usr/local/bin/opencode; \
+       fi \
     && chmod +x /usr/local/bin/opencode
 
 # 4. 设置运行环境
