@@ -1,26 +1,76 @@
-# docker-compose.yml — example usage
-services:
-  opencode:
-    build: .
-    stdin_open: true
-    tty: true
-    working_dir: /workspace
-    volumes:
-      - ./workspace:/workspace
-      - opencode-data:/root/.local/share/opencode
-    environment:
-      # ── 必填 ────────────────────────────────────────────────────────────────
-      OPENAI_API_KEY: "sk-your-key-here"
+name: Multi-Arch Parallel Build
 
-      # ── 自定义 baseURL（覆盖内置 openai provider 的端点）───────────────────
-      OPENAI_BASE_URL: "https://api.amethyst.ltd/v1"
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
 
-      # ── 默认模型 ─────────────────────────────────────────────────────────────
-      OPENAI_MODEL: "gpt-4o"
+env:
+  REGISTRY: ghcr.io
 
-      # ── Basic Auth（可选，用于绕过 Caddy 弹窗 Bug）──────────────────────────
-      BASIC_AUTH_USER: "admin"
-      BASIC_AUTH_PASS: "your-caddy-password"
+jobs:
+  # 抽取镜像名并转小写
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      image_name: ${{ steps.lower.outputs.image_name }}
+    steps:
+      - id: lower
+        run: echo "image_name=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
-volumes:
-  opencode-data:
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 如果是 arm64 任务，才加载 QEMU (有些二进制解压需要环境)
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push by Arch
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          # 关键：每个 Job 只跑自己的架构
+          platforms: linux/${{ matrix.arch }}
+          # 临时打上带后缀的标签
+          tags: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:${{ matrix.arch }}
+          cache-from: type=gha,scope=build-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=build-${{ matrix.arch }}
+
+  # 最终合并：把两个独立的镜像聚合成一个 Multi-arch Manifest
+  manifest:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and Push Manifest
+        run: |
+          D_IMG="${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}"
+          docker buildx create --use
+          docker buildx imagetools create -t ${D_IMG}:latest \
+            ${D_IMG}:amd64 \
+            ${D_IMG}:arm64
